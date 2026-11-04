@@ -50,6 +50,7 @@ class BackupService {
         'ALTER TABLE backups ADD COLUMN oplog_start_ts INTEGER',
         'ALTER TABLE backups ADD COLUMN oplog_end_ts INTEGER',
         'ALTER TABLE backups ADD COLUMN engine TEXT',
+        'ALTER TABLE backups ADD COLUMN db_name TEXT',
         'ALTER TABLE backups ADD COLUMN log_start TEXT',
         'ALTER TABLE backups ADD COLUMN log_end TEXT'
       ];
@@ -139,7 +140,8 @@ class BackupService {
         status: 'in_progress',
         timestamp,
         local_path: localPath,
-        engine: engine.name
+        engine: engine.name,
+        db_name: engine.getTargetName(settings)
       });
 
       this.currentBackup = { id: backupId, type: 'full', engine: engine.name };
@@ -267,7 +269,8 @@ class BackupService {
         status: 'in_progress',
         timestamp,
         local_path: localPath,
-        engine: engine.name
+        engine: engine.name,
+        db_name: engine.getTargetName(settings)
       });
 
       this.currentBackup = { id: backupId, type: 'incremental', engine: engine.name };
@@ -707,8 +710,8 @@ class BackupService {
    */
   saveBackupMetadata(metadata) {
     const stmt = this.db.prepare(`
-      INSERT INTO backups (id, filename, type, size, status, timestamp, ftp_path, local_path, error, completed_at, encrypted, engine, log_start, log_end)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO backups (id, filename, type, size, status, timestamp, ftp_path, local_path, error, completed_at, encrypted, engine, log_start, log_end, db_name)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -725,7 +728,8 @@ class BackupService {
       metadata.encrypted || 0,
       metadata.engine || null,
       metadata.log_start || null,
-      metadata.log_end || null
+      metadata.log_end || null,
+      metadata.db_name || null
     );
   }
 

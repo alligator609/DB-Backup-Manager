@@ -21,6 +21,19 @@ class MongoEngine {
     return !!settings.mongoUrl;
   }
 
+  /**
+   * Name of the database being backed up (from the connection URL path)
+   */
+  getTargetName(settings) {
+    try {
+      const pathname = new URL(settings.mongoUrl).pathname;
+      return decodeURIComponent(pathname.replace(/^\//, '').split('/')[0]) || 'all databases';
+    } catch {
+      const m = String(settings.mongoUrl).match(/\/([^/?]+)(\?|$)/);
+      return m ? m[1] : 'unknown';
+    }
+  }
+
   assertConfigured(settings) {
     if (!settings.mongoUrl) {
       throw new Error('MongoDB URL not configured');

@@ -55,6 +55,13 @@ class MysqlEngine {
     return !!(settings.mysqlHost && settings.mysqlUser);
   }
 
+  /**
+   * Name of the database being backed up (empty setting = all databases)
+   */
+  getTargetName(settings) {
+    return settings.mysqlDatabase || 'all databases';
+  }
+
   assertConfigured(settings) {
     if (!settings.mysqlHost || !settings.mysqlUser) {
       throw new Error('MySQL connection not configured (host and user are required)');
