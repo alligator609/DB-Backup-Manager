@@ -1,6 +1,7 @@
 const { spawn } = require('child_process');
 const { MongoClient } = require('mongodb');
 const LogService = require('../LogService');
+const { sanitizeArgs } = require('./sanitize');
 
 /**
  * MongoDB engine implementation.
@@ -108,7 +109,7 @@ class MongoEngine {
         '--gzip'
       ];
 
-      console.log('[Command] mongodump', args.join(' '));
+      console.log('[Command] mongodump', sanitizeArgs(args).join(' '));
 
       const proc = spawn('mongodump', args);
       let stderr = '';
@@ -165,7 +166,7 @@ class MongoEngine {
         '--gzip'
       ];
 
-      console.log('[Command] mongodump', args.join(' '));
+      console.log('[Command] mongodump', sanitizeArgs(args).join(' '));
 
       const proc = spawn('mongodump', args);
       let stderr = '';
@@ -310,7 +311,7 @@ class MongoEngine {
         `--nsTo=${tempDbName}.oplog`
       ];
 
-      console.log('[Command] mongorestore (oplog to temp)', args.join(' '));
+      console.log('[Command] mongorestore (oplog to temp)', sanitizeArgs(args).join(' '));
 
       const proc = spawn('mongorestore', args);
       let stderr = '';
