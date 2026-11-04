@@ -615,6 +615,11 @@ class BackupService {
    */
   async uploadToFtp(backupId, localPath, filename) {
     try {
+      const settings = await SettingsService.getAll();
+      if (!settings.ftpHost) {
+        return { success: true, skipped: true, message: 'FTP not configured, upload skipped' };
+      }
+
       const remotePath = path.posix.join(
         new Date().toISOString().split('T')[0], // YYYY-MM-DD
         filename
