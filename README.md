@@ -178,7 +178,7 @@ npm run dev
 
 ## MySQL Backups
 
-The app supports MySQL/MariaDB alongside MongoDB. Select the engine in **Settings → Database Engine**, or set `DB_ENGINE=mysql` via environment.
+The app supports MySQL/MariaDB alongside MongoDB — enable one or both engines in **Settings → Database Engines**. Each engine backs up independently on the same schedules, and backups/restore chains are tracked per engine. You can also set `DB_ENGINE` / `MONGO_ENABLED` / `MYSQL_ENABLED` via environment.
 
 ### Connection
 

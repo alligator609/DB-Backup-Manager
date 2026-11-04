@@ -99,7 +99,7 @@ router.post('/test-db', async (req, res) => {
       if (merged[key] === '***') merged[key] = saved[key];
     }
 
-    const engine = Engines.getEngine(merged);
+    const engine = Engines.getEngineByName(req.body.engine) || Engines.getEngine(merged);
     const result = await engine.testConnection(merged);
 
     return res.json({

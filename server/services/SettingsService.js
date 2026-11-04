@@ -14,6 +14,12 @@ class SettingsService {
     
     this.defaultSettings = {
       dbEngine: process.env.DB_ENGINE || 'mongodb',
+      mongoEnabled: process.env.MONGO_ENABLED !== undefined
+        ? process.env.MONGO_ENABLED === 'true'
+        : (process.env.DB_ENGINE || 'mongodb') === 'mongodb',
+      mysqlEnabled: process.env.MYSQL_ENABLED !== undefined
+        ? process.env.MYSQL_ENABLED === 'true'
+        : process.env.DB_ENGINE === 'mysql',
       mongoUrl: process.env.MONGO_URL || '',
       mysqlHost: process.env.MYSQL_HOST || '',
       mysqlPort: parseInt(process.env.MYSQL_PORT) || 3306,

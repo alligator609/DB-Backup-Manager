@@ -51,6 +51,10 @@ class MysqlEngine {
   clientTool() { return this.resolveTool(['mariadb', 'mysql']); }
   binlogTool() { return this.resolveTool(['mariadb-binlog', 'mysqlbinlog']); }
 
+  isConfigured(settings) {
+    return !!(settings.mysqlHost && settings.mysqlUser);
+  }
+
   assertConfigured(settings) {
     if (!settings.mysqlHost || !settings.mysqlUser) {
       throw new Error('MySQL connection not configured (host and user are required)');

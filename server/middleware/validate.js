@@ -42,6 +42,10 @@ const backupRunValidation = [
   body('type')
     .isIn(['full', 'incremental'])
     .withMessage('Type must be "full" or "incremental"'),
+  body('engine')
+    .optional()
+    .isIn(['all', 'mongodb', 'mysql'])
+    .withMessage('Engine must be "all", "mongodb" or "mysql"'),
   validate
 ];
 
@@ -76,6 +80,14 @@ const settingsValidation = [
     .optional()
     .isIn(['mongodb', 'mysql'])
     .withMessage('Database engine must be "mongodb" or "mysql"'),
+  body('mongoEnabled')
+    .optional()
+    .isBoolean()
+    .withMessage('mongoEnabled must be a boolean'),
+  body('mysqlEnabled')
+    .optional()
+    .isBoolean()
+    .withMessage('mysqlEnabled must be a boolean'),
   body('mongoUrl')
     .optional()
     .isString()

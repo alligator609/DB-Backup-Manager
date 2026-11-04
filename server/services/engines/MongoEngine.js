@@ -17,6 +17,10 @@ class MongoEngine {
     this.changeLogName = 'oplog';
   }
 
+  isConfigured(settings) {
+    return !!settings.mongoUrl;
+  }
+
   assertConfigured(settings) {
     if (!settings.mongoUrl) {
       throw new Error('MongoDB URL not configured');

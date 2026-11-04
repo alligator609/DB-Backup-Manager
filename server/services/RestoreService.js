@@ -81,9 +81,9 @@ class RestoreService {
    * Restore to a specific point in time (PITR)
    * Automatically calculates and applies the backup chain
    */
-  async restoreToPointInTime(targetTimestamp) {
-    const targetTs = typeof targetTimestamp === 'string' 
-      ? new Date(targetTimestamp).getTime() 
+  async restoreToPointInTime(targetTimestamp, engineName) {
+    const targetTs = typeof targetTimestamp === 'string'
+      ? new Date(targetTimestamp).getTime()
       : targetTimestamp;
 
     if (isNaN(targetTs)) {
@@ -92,9 +92,9 @@ class RestoreService {
 
     await LogService.log('info', `Starting Point-in-Time restore to: ${new Date(targetTs).toISOString()}`);
 
-    // Get the backup chain for this point in time (current engine only)
-    const settings = await SettingsService.getAll();
-    const engineName = Engines.getEngineName(settings);
+    // Get the backup chain for this point in time.
+    // When no engine is given, the chain is resolved from the most recent
+    // full backup and its matching incrementals.
     const chainInfo = BackupService.getBackupChain(targetTs, engineName);
     
     await LogService.log('info', `PITR chain: 1 full backup + ${chainInfo.incrementalCount} incremental backups`, {
@@ -146,9 +146,7 @@ class RestoreService {
   /**
    * Preview restore chain for a point in time (without executing)
    */
-  async previewRestore(targetTimestamp) {
-    const settings = await SettingsService.getAll();
-    const engineName = Engines.getEngineName(settings);
+  async previewRestore(targetTimestamp, engineName) {
     return BackupService.getBackupChain(targetTimestamp, engineName);
   }
 

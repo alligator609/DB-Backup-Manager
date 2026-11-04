@@ -131,12 +131,12 @@ const Settings = () => {
         }
     };
 
-    const testDbConnection = async () => {
-        setTestingDb(true);
+    const testDbConnection = async (engine) => {
+        setTestingDb(engine);
         setDbTestResult(null);
 
         try {
-            const response = await api.post('/settings/test-db', settings);
+            const response = await api.post('/settings/test-db', { ...settings, engine });
             setDbTestResult(response.data);
             setToast({ message: response.data.success ? 'Database connection successful!' : 'Database connection failed', type: response.data.success ? 'success' : 'error' });
         } catch (error) {
@@ -213,6 +213,15 @@ const Settings = () => {
         );
     }
 
+    // Engine enable flags — fall back to the old exclusive dbEngine selector
+    // for settings saved before multi-engine support
+    const mongoEngineOn = settings.mongoEnabled !== undefined
+        ? settings.mongoEnabled
+        : settings.dbEngine !== 'mysql';
+    const mysqlEngineOn = settings.mysqlEnabled !== undefined
+        ? settings.mysqlEnabled
+        : settings.dbEngine === 'mysql';
+
     return (
         <div className="min-h-screen">
             <Navbar />
@@ -254,30 +263,42 @@ const Settings = () => {
                         </div>
                     </Card>
 
-                    {/* Database Engine Selection */}
-                    <Card title="Database Engine">
-                        <div className="flex gap-2 bg-gray-100 rounded-xl p-1.5">
+                    {/* Database Engines — enable one or both */}
+                    <Card title="Database Engines">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {[
-                                { value: 'mongodb', label: '🍃 MongoDB' },
-                                { value: 'mysql', label: '🐬 MySQL' }
-                            ].map((eng) => (
-                                <button
-                                    key={eng.value}
-                                    type="button"
-                                    onClick={() => { handleChange('dbEngine', eng.value); setDbTestResult(null); }}
-                                    className={`flex-1 px-4 py-2.5 rounded-lg font-semibold transition-all text-sm sm:text-base ${(settings.dbEngine || 'mongodb') === eng.value
-                                            ? 'bg-white text-gray-900 shadow-md'
-                                            : 'text-gray-600 hover:bg-gray-50'
-                                        }`}
-                                >
-                                    {eng.label}
-                                </button>
-                            ))}
+                                { key: 'mongoEnabled', label: '🍃 MongoDB', desc: 'mongodump + oplog incrementals' },
+                                { key: 'mysqlEnabled', label: '🐬 MySQL', desc: 'mysqldump + binlog incrementals' }
+                            ].map((eng) => {
+                                const enabled = settings[eng.key] !== undefined
+                                    ? settings[eng.key]
+                                    : (eng.key === 'mongoEnabled' ? settings.dbEngine !== 'mysql' : settings.dbEngine === 'mysql');
+                                return (
+                                    <button
+                                        key={eng.key}
+                                        type="button"
+                                        onClick={() => handleChange(eng.key, !enabled)}
+                                        className={`p-4 rounded-xl border-2 text-left transition-all ${enabled
+                                                ? 'border-primary-500 bg-primary-50'
+                                                : 'border-gray-200 bg-white hover:border-gray-300'
+                                            }`}
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <span className="font-semibold text-gray-900">{eng.label}</span>
+                                            <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${enabled ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                                                {enabled ? 'ON' : 'OFF'}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-gray-500 mt-1">{eng.desc}</p>
+                                    </button>
+                                );
+                            })}
                         </div>
+                        <p className="text-xs text-gray-500 mt-3">💡 Enable both to back up MongoDB and MySQL with the same app — backups and restore chains are tracked per engine.</p>
                     </Card>
 
                     {/* MongoDB Configuration */}
-                    {(settings.dbEngine || 'mongodb') === 'mongodb' && (<>
+                    {mongoEngineOn && (<>
                     <Card title="MongoDB Configuration">
                         <div>
                             <label className="label flex items-center gap-2">
@@ -288,11 +309,11 @@ const Settings = () => {
                                 </svg>
                                 MongoDB Connection URL
                             </label>
-                            <input type="text" value={settings.mongoUrl || ''} onChange={(e) => handleChange('mongoUrl', e.target.value)} className="input" placeholder="mongodb://localhost:27017/yourdb" />
+                            <input type="text" value={settings.mongoUrl || ''} onChange={(e) => handleChange('mongoUrl', e.target.value)} className="input" placeholder="mongodb://host.docker.internal:27017/yourdb" />
                             <p className="text-xs text-gray-500 mt-2">🔒 Full MongoDB connection string (encrypted at rest)</p>
                         </div>
-                        <button type="button" onClick={testDbConnection} disabled={testingDb} className="btn-primary w-full mt-4">
-                            {testingDb ? 'Testing...' : '✓ Test MongoDB Connection'}
+                        <button type="button" onClick={() => testDbConnection('mongodb')} disabled={testingDb === 'mongodb'} className="btn-primary w-full mt-4">
+                            {testingDb === 'mongodb' ? 'Testing...' : '✓ Test MongoDB Connection'}
                         </button>
                         {dbTestResult && <div className="mt-3"><ConnectionStatus testResult={dbTestResult} /></div>}
                     </Card>
@@ -469,7 +490,7 @@ mongosh --eval "rs.initiate()"`}
                     </>)}
 
                     {/* MySQL Configuration */}
-                    {settings.dbEngine === 'mysql' && (<>
+                    {mysqlEngineOn && (<>
                     <Card title="MySQL Configuration">
                         <div className="space-y-4">
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -497,8 +518,8 @@ mongosh --eval "rs.initiate()"`}
                                 <input type="text" value={settings.mysqlDatabase || ''} onChange={(e) => handleChange('mysqlDatabase', e.target.value)} className="input" placeholder="Leave empty to back up all databases" />
                                 <p className="text-xs text-gray-500 mt-2">🔒 Password is encrypted at rest. Docker users: use <code className="bg-gray-100 px-1 rounded">host.docker.internal</code> to reach a MySQL server on the host machine.</p>
                             </div>
-                            <button type="button" onClick={testDbConnection} disabled={testingDb} className="btn-primary w-full">
-                                {testingDb ? 'Testing...' : '✓ Test MySQL Connection'}
+                            <button type="button" onClick={() => testDbConnection('mysql')} disabled={testingDb === 'mysql'} className="btn-primary w-full">
+                                {testingDb === 'mysql' ? 'Testing...' : '✓ Test MySQL Connection'}
                             </button>
                             {dbTestResult && <ConnectionStatus testResult={dbTestResult} />}
                         </div>

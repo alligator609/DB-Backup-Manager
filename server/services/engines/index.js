@@ -22,6 +22,44 @@ function getEngine(settings) {
 }
 
 /**
+ * Get an engine implementation by name.
+ */
+function getEngineByName(name) {
+  return engines[name] || null;
+}
+
+/**
+ * Get the names of all ENABLED engines.
+ * Back-compat: if the enabled flags are absent (pre-multi-engine settings),
+ * derive them from the old exclusive dbEngine selector.
+ */
+function getEnabledEngineNames(settings) {
+  if (!settings) return ['mongodb'];
+
+  const mongoEnabled = settings.mongoEnabled !== undefined
+    ? !!settings.mongoEnabled
+    : settings.dbEngine !== 'mysql';
+  const mysqlEnabled = settings.mysqlEnabled !== undefined
+    ? !!settings.mysqlEnabled
+    : settings.dbEngine === 'mysql';
+
+  const names = [];
+  if (mongoEnabled) names.push('mongodb');
+  if (mysqlEnabled) names.push('mysql');
+  return names;
+}
+
+/**
+ * Engine names that are both enabled AND have their connection configured.
+ */
+function getReadyEngineNames(settings) {
+  return getEnabledEngineNames(settings).filter(name => {
+    const engine = engines[name];
+    return engine && engine.isConfigured(settings);
+  });
+}
+
+/**
  * Get the engine implementation responsible for a given backup record.
  * Falls back to the currently configured engine when the backup predates
  * engine tracking (engine column is NULL).
@@ -31,4 +69,12 @@ function getEngineForBackup(backup, settings) {
   return engines[name] || engines.mongodb;
 }
 
-module.exports = { engines, getEngineName, getEngine, getEngineForBackup };
+module.exports = {
+  engines,
+  getEngineName,
+  getEngine,
+  getEngineByName,
+  getEnabledEngineNames,
+  getReadyEngineNames,
+  getEngineForBackup
+};

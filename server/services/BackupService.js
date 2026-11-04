@@ -77,13 +77,49 @@ class BackupService {
   }
 
   /**
-   * Create a full MongoDB backup
+   * Run a backup for every enabled engine.
+   * Engines that are enabled but not configured are skipped with a warning;
+   * per-engine failures are logged but don't stop the others.
    */
-  async createFullBackup() {
+  async runBackupsForAllEnabled(type) {
+    const settings = await SettingsService.getAll();
+    const enabledNames = Engines.getEnabledEngineNames(settings);
+    const results = [];
+
+    if (enabledNames.length === 0) {
+      throw new Error('No database engines enabled. Enable at least one engine in Settings.');
+    }
+
+    for (const name of enabledNames) {
+      const engine = Engines.getEngineByName(name);
+      if (!engine.isConfigured(settings)) {
+        await LogService.log('warning', `Skipping ${name} backup: enabled but not configured`);
+        results.push({ engine: name, skipped: true, message: 'Not configured' });
+        continue;
+      }
+
+      try {
+        const result = type === 'incremental'
+          ? await this.createIncrementalBackup(name)
+          : await this.createFullBackup(name);
+        results.push({ engine: name, ...result });
+      } catch (error) {
+        await LogService.log('error', `${name} ${type} backup failed: ${error.message}`);
+        results.push({ engine: name, error: error.message });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Create a full database backup
+   */
+  async createFullBackup(engineName) {
     const backupId = this.generateBackupId();
     const timestamp = Date.now();
     const settings = await SettingsService.getAll();
-    const engine = Engines.getEngine(settings);
+    const engine = Engines.getEngineByName(engineName) || Engines.getEngine(settings);
     const filename = `full_${new Date(timestamp).toISOString().replace(/:/g, '-').split('.')[0]}${engine.fullFileExtension}`;
     const localPath = path.join(this.backupDir, filename);
 
@@ -195,11 +231,11 @@ class BackupService {
    * MongoDB: oplog entries newer than the last backup.
    * MySQL: binlog events between the last backup's log coordinates and now.
    */
-  async createIncrementalBackup() {
+  async createIncrementalBackup(engineName) {
     const backupId = this.generateBackupId();
     const timestamp = Date.now();
     const settings = await SettingsService.getAll();
-    const engine = Engines.getEngine(settings);
+    const engine = Engines.getEngineByName(engineName) || Engines.getEngine(settings);
 
     // Chain incrementals onto the last completed backup of the SAME engine
     const lastBackup = this.getLastCompletedBackup(engine.name);
@@ -735,10 +771,10 @@ class BackupService {
    * is available on the configured engine
    * (MongoDB: replica set oplog, MySQL: binary logging).
    */
-  async getIncrementalSupport() {
+  async getIncrementalSupport(engineName) {
     try {
       const settings = await SettingsService.getAll();
-      const engine = Engines.getEngine(settings);
+      const engine = Engines.getEngineByName(engineName) || Engines.getEngine(settings);
       const support = await engine.checkIncrementalSupport(settings);
       return { ...support, engine: engine.name };
     } catch (error) {
@@ -777,11 +813,11 @@ class BackupService {
       };
     }
 
-    // Get all incremental backups since the last full backup (same engine)
-    const engineFilter = engineName ? `AND ${this._engineFilterSql()}` : '';
+    // Get all incremental backups since the last full backup (same engine as base)
+    const incEngine = engineName || lastFull.engine || 'mongodb';
     const incrementals = this.db.prepare(
-      `SELECT * FROM backups WHERE type = ? AND timestamp > ? AND status = ? ${engineFilter} ORDER BY timestamp ASC`
-    ).all('incremental', lastFull.timestamp, 'completed', ...(engineName ? [engineName, engineName] : []));
+      `SELECT * FROM backups WHERE type = ? AND timestamp > ? AND status = ? AND ${this._engineFilterSql()} ORDER BY timestamp ASC`
+    ).all('incremental', lastFull.timestamp, 'completed', incEngine, incEngine);
 
     // Get the last incremental backup
     const lastIncremental = incrementals.length > 0 ? incrementals[incrementals.length - 1] : null;
@@ -869,10 +905,16 @@ class BackupService {
       throw new Error('No full backup available before the target time');
     }
 
+    // Incrementals must belong to the same engine as the base full backup.
+    // When no engine was specified, inherit it from the backup record itself
+    // (NULL engine = pre-multi-engine rows = mongodb).
+    const chainEngine = engineName || fullBackup.engine || 'mongodb';
+    const incParams = engineName ? engineParams : [chainEngine, chainEngine];
+
     // Find all incremental backups between the full backup and target time
     const incrementals = this.db.prepare(
-      `SELECT * FROM backups WHERE type = ? AND timestamp > ? AND timestamp <= ? AND status = ? ${engineFilter} ORDER BY timestamp ASC`
-    ).all('incremental', fullBackup.timestamp, targetTs, 'completed', ...engineParams);
+      `SELECT * FROM backups WHERE type = ? AND timestamp > ? AND timestamp <= ? AND status = ? AND ${this._engineFilterSql()} ORDER BY timestamp ASC`
+    ).all('incremental', fullBackup.timestamp, targetTs, 'completed', ...incParams);
 
     const chain = [fullBackup, ...incrementals];
 

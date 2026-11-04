@@ -109,7 +109,7 @@ const Dashboard = () => {
         setShowConfirm(false);
 
         try {
-            const response = await api.post('/backup/run', { type });
+            const response = await api.post('/backup/run', { type, engine: 'all' });
 
             if (response.data.success) {
                 setToast({
