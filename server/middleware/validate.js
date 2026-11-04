@@ -72,10 +72,34 @@ const scheduleValidation = [
  * Validation rules for settings update
  */
 const settingsValidation = [
+  body('dbEngine')
+    .optional()
+    .isIn(['mongodb', 'mysql'])
+    .withMessage('Database engine must be "mongodb" or "mysql"'),
   body('mongoUrl')
     .optional()
     .isString()
     .withMessage('MongoDB URL must be a string'),
+  body('mysqlHost')
+    .optional()
+    .isString()
+    .withMessage('MySQL host must be a string'),
+  body('mysqlPort')
+    .optional()
+    .isInt({ min: 1, max: 65535 })
+    .withMessage('MySQL port must be between 1 and 65535'),
+  body('mysqlUser')
+    .optional()
+    .isString()
+    .withMessage('MySQL user must be a string'),
+  body('mysqlPassword')
+    .optional()
+    .isString()
+    .withMessage('MySQL password must be a string'),
+  body('mysqlDatabase')
+    .optional()
+    .isString()
+    .withMessage('MySQL database must be a string'),
   body('ftpHost')
     .optional()
     .isString()

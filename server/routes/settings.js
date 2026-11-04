@@ -69,7 +69,7 @@ router.post('/test-ftp', async (req, res) => {
   try {
     const FtpService = require('../services/FtpService');
     const result = await FtpService.testConnection(req.body);
-    
+
     return res.json({
       success: result.success,
       message: result.message
@@ -79,6 +79,39 @@ router.post('/test-ftp', async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to test FTP connection'
+    });
+  }
+});
+
+/**
+ * POST /api/settings/test-db
+ * Test the configured database engine connection
+ */
+router.post('/test-db', async (req, res) => {
+  try {
+    const Engines = require('../services/engines');
+
+    // Merge saved settings with overrides from the request body,
+    // restoring real credentials where the UI sent the '***' mask
+    const saved = await SettingsService.getAll();
+    const merged = { ...saved, ...req.body };
+    for (const key of ['mongoUrl', 'mysqlPassword', 'ftpPassword']) {
+      if (merged[key] === '***') merged[key] = saved[key];
+    }
+
+    const engine = Engines.getEngine(merged);
+    const result = await engine.testConnection(merged);
+
+    return res.json({
+      success: result.success,
+      message: result.message,
+      details: result.details
+    });
+  } catch (error) {
+    console.error('Test DB error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to test database connection'
     });
   }
 });

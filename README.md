@@ -1,10 +1,11 @@
 # MongoDB Backup Manager
 
-A production-ready, web-based MongoDB backup solution with scheduling, FTP upload, incremental backups, and point-in-time recovery capabilities.
+A production-ready, web-based database backup solution for **MongoDB and MySQL** with scheduling, FTP upload, incremental backups, and point-in-time recovery capabilities.
 
 ![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)
 ![Docker](https://img.shields.io/badge/docker-ready-blue.svg)
 ![MongoDB](https://img.shields.io/badge/mongodb-7.0-green.svg)
+![MySQL](https://img.shields.io/badge/mysql-8.0-orange.svg)
 
 ## Project Status
 
@@ -14,7 +15,11 @@ While core features such as full backups, incremental backups, scheduling, and r
 
 Contributions, testing feedback, and issue reports are welcome.
 
-> ⚠️ **Important**: For incremental backups to work, your MongoDB server **must** be configured as a Replica Set (even a single-node replica set). This is required to access the MongoDB `oplog` for tracking changes. Without this, incremental backups will fail.
+> ⚠️ **Important**: For incremental backups and PITR to work, the target database's change log must be enabled:
+> - **MongoDB**: must run as a Replica Set (even single-node) to expose the `oplog`
+> - **MySQL**: must have the binary log enabled (`log_bin=ON`, `binlog_format=ROW`)
+>
+> Full backups work without either of these.
 
 ---
 
@@ -22,9 +27,10 @@ Contributions, testing feedback, and issue reports are welcome.
 
 **Backup Management**
 - Full database backups with compression (gzip/tar)
-- Incremental backups using MongoDB oplog
+- Incremental backups using MongoDB oplog or MySQL binlog
 - Point-in-time recovery (PITR) support
 - Automatic backup rotation and retention policies
+- Pluggable engine layer (MongoDB and MySQL/MariaDB supported)
 
 **Storage & Transfer**
 - Local backup storage with configurable retention
@@ -91,7 +97,8 @@ Default credentials:
 **Prerequisites**
 - Node.js 18 or higher
 - MongoDB Tools (`mongodump`, `mongorestore`)
-- MongoDB Replica Set (Required for incremental backups)
+- MariaDB/MySQL client tools (`mysqldump`, `mysql`, `mysqlbinlog`) — only needed for MySQL backups
+- MongoDB Replica Set or MySQL binary logging (Required for incremental backups)
 - npm or yarn
 
 **Steps**
@@ -139,7 +146,13 @@ npm run dev
 | `ADMIN_USER` | Admin username | `admin` |
 | `ADMIN_PASS` | Admin password | `admin` |
 | `JWT_SECRET` | JWT signing secret | - |
+| `DB_ENGINE` | Database engine: `mongodb` or `mysql` | `mongodb` |
 | `MONGO_URL` | MongoDB connection string | - |
+| `MYSQL_HOST` | MySQL server hostname | - |
+| `MYSQL_PORT` | MySQL server port | `3306` |
+| `MYSQL_USER` | MySQL username | - |
+| `MYSQL_PASSWORD` | MySQL password | - |
+| `MYSQL_DATABASE` | MySQL database (empty = all databases) | - |
 | `FTP_HOST` | FTP server hostname | - |
 | `FTP_PORT` | FTP server port | `21` |
 | `FTP_USER` | FTP username | - |
@@ -163,6 +176,50 @@ npm run dev
 
 ---
 
+## MySQL Backups
+
+The app supports MySQL/MariaDB alongside MongoDB. Select the engine in **Settings → Database Engine**, or set `DB_ENGINE=mysql` via environment.
+
+### Connection
+
+Configure host, port, user, password, and (optionally) a single database in **Settings → MySQL Configuration**, or via the `MYSQL_*` environment variables. Leave the database empty to back up **all databases**.
+
+> **Docker users**: use `host.docker.internal` as the host to reach a MySQL server running on the host machine. Make sure MySQL's `bind-address` accepts remote connections and the user is granted with a host wildcard (e.g. `'backup'@'%'`).
+
+**Required user privileges:**
+
+```sql
+CREATE USER 'backup'@'%' IDENTIFIED WITH mysql_native_password BY 'strongpassword';
+GRANT SELECT, RELOAD, LOCK TABLES, REPLICATION CLIENT, REPLICATION SLAVE ON *.* TO 'backup'@'%';
+FLUSH PRIVILEGES;
+```
+
+> ⚠️ MariaDB client tools (used by the Docker image) may not support MySQL 8's default `caching_sha2_password` auth plugin — create the backup user with `mysql_native_password` as shown above.
+
+### Incremental backups & PITR (binary log)
+
+Incremental MySQL backups dump a slice of the **binary log** (the MySQL equivalent of MongoDB's oplog). Enable it on the server:
+
+```ini
+# my.cnf / my.ini — then restart MySQL
+[mysqld]
+server_id = 1
+log_bin = mysql-bin
+binlog_format = ROW
+```
+
+Verify with:
+
+```sql
+SHOW VARIABLES LIKE 'log_bin';  -- should be ON
+```
+
+The dashboard PITR card shows "Binary logging enabled" when detected. Full backups work regardless; they embed consistent binlog coordinates via `mysqldump --master-data=2` (requires `RELOAD` privilege) so incrementals resume from the exact snapshot point.
+
+**File formats**: full backups are `*.sql.gz` (SQL dump); incrementals are `*.binlog.sql.gz` (`mysqlbinlog` output). Restores pipe the SQL into the `mysql` client.
+
+---
+
 ## Project Structure
 
 ```
@@ -178,6 +235,7 @@ mongodb-backup-manager/
 │   ├── middleware/         # Auth and other middleware
 │   ├── routes/             # API route handlers
 │   ├── services/           # Core business logic
+│   │   └── engines/        # Per-engine adapters (MongoEngine, MysqlEngine)
 │   └── tests/              # Unit tests
 ├── data/                   # Backups and database (gitignored)
 ├── docker-compose.yml      # Docker Compose configuration
@@ -217,6 +275,7 @@ mongodb-backup-manager/
 | GET | `/api/settings` | Get current settings |
 | PUT | `/api/settings` | Update settings |
 | POST | `/api/settings/test-ftp` | Test FTP connection |
+| POST | `/api/settings/test-db` | Test database engine connection |
 
 ### Logs
 | Method | Endpoint | Description |
@@ -291,6 +350,16 @@ server {
 - Verify the `MONGO_URL` is correct and accessible
 - Check if MongoDB is running and accepting connections
 - Ensure network/firewall allows the connection
+
+**Cannot connect to MySQL**
+- Verify `MYSQL_*` settings (or the Settings page fields) — host, port, user, password
+- From Docker, use `host.docker.internal` for a server on the host machine, not `localhost`/`127.0.0.1`
+- Check MySQL `bind-address` is not `127.0.0.1`-only and the user host pattern allows the connection (`'user'@'%'`)
+- For `caching_sha2_password` auth errors, recreate the user `IDENTIFIED WITH mysql_native_password`
+
+**MySQL incremental backup fails with "Binlogging on server not active" / "log_bin=OFF"**
+- Enable the binary log in `my.cnf`/`my.ini` (`log_bin`, `server_id`, `binlog_format=ROW`) and restart MySQL
+- Full backups work without binlog; only incremental/PITR require it
 
 **Backups failing**
 - Check if `mongodump` is installed and in PATH

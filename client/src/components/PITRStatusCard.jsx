@@ -23,7 +23,20 @@ const PITRStatusCard = ({ pitrStatus, loading }) => {
         );
     }
 
-    const { enabled, coverage, lastFullBackup, lastIncrementalBackup, replicaSet, stats } = pitrStatus;
+    const { enabled, coverage, lastFullBackup, lastIncrementalBackup, replicaSet, stats, engine, incrementalSupport } = pitrStatus;
+
+    // Engine-aware labeling for the change-log requirement
+    // (MongoDB: replica set oplog, MySQL: binary log)
+    const logSupported = incrementalSupport ? incrementalSupport.supported : replicaSet?.isReplicaSet;
+    const supportedLabel = engine === 'mysql'
+        ? 'Binary logging enabled'
+        : `Replica Set: ${replicaSet?.setName || 'enabled'}`;
+    const unsupportedLabel = engine === 'mysql'
+        ? 'Binary logging disabled (Limited Features)'
+        : 'Standalone MongoDB (Limited Features)';
+    const requirementText = engine === 'mysql'
+        ? '⚠️ Incremental backups and PITR require binary logging (log_bin) on the MySQL server.'
+        : '⚠️ Incremental backups and PITR require MongoDB Replica Set.';
 
     const formatDate = (timestamp) => {
         if (!timestamp) return 'N/A';
@@ -58,26 +71,24 @@ const PITRStatusCard = ({ pitrStatus, loading }) => {
                 </span>
             </div>
 
-            {/* Replica Set Status */}
-            <div className={`mb-4 p-3 rounded-lg ${replicaSet?.isReplicaSet
+            {/* Change-log Status (replica set / binlog) */}
+            <div className={`mb-4 p-3 rounded-lg ${logSupported
                 ? 'bg-green-50 border border-green-200'
                 : 'bg-amber-50 border border-amber-200'
                 }`}>
                 <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${replicaSet?.isReplicaSet ? 'bg-green-500' : 'bg-amber-500'
+                    <div className={`w-2 h-2 rounded-full ${logSupported ? 'bg-green-500' : 'bg-amber-500'
                         }`}></div>
-                    <span className={`text-sm font-medium ${replicaSet?.isReplicaSet ? 'text-green-700' : 'text-amber-700'
+                    <span className={`text-sm font-medium ${logSupported ? 'text-green-700' : 'text-amber-700'
                         }`}>
-                        {replicaSet?.isReplicaSet
-                            ? `Replica Set: ${replicaSet.setName}`
-                            : 'Standalone MongoDB (Limited Features)'}
+                        {logSupported ? supportedLabel : unsupportedLabel}
                     </span>
                 </div>
-                {!replicaSet?.isReplicaSet && (
+                {!logSupported && (
                     <div className="mt-2 pt-2 border-t border-amber-200">
                         <p className="text-xs text-amber-700 mb-2">
-                            ⚠️ Incremental backups and PITR require MongoDB Replica Set.
-                            Full backups still work normally.
+                            {requirementText}
+                            {' '}Full backups still work normally.
                         </p>
                         <a
                             href="/settings"

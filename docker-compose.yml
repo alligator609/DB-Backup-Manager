@@ -32,6 +32,16 @@ services:
       - ADMIN_USER=admin
       - ADMIN_PASS=admin
       - JWT_SECRET=change_this_jwt_secret_to_something_random_and_secure
+      # Database engine: mongodb | mysql
+      # - DB_ENGINE=mongodb
+      # MongoDB connection (or set it via the Settings UI)
+      # - MONGO_URL=mongodb://host.docker.internal:27017/yourdb
+      # MySQL connection (when DB_ENGINE=mysql)
+      # - MYSQL_HOST=host.docker.internal
+      # - MYSQL_PORT=3306
+      # - MYSQL_USER=backup_user
+      # - MYSQL_PASSWORD=
+      # - MYSQL_DATABASE=
       # Backup settings
       - KEEP_LOCAL_BACKUPS=true
       - KEEP_LAST_N_BACKUPS=30
@@ -42,7 +52,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - backup-data:/app/data
+      # The app writes data under process.cwd()/data, i.e. /app/server/data
+      - backup-data:/app/server/data
       - backup-logs:/app/logs
 
     restart: unless-stopped

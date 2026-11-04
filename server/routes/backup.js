@@ -37,15 +37,28 @@ router.get('/status', async (req, res) => {
  */
 router.get('/pitr-status', async (req, res) => {
   try {
-    const pitrStatus = BackupService.getPITRStatus();
-    const replicaSetStatus = await BackupService.checkReplicaSetStatus();
+    const SettingsService = require('../services/SettingsService');
+    const Engines = require('../services/engines');
+    const settings = await SettingsService.getAll();
+    const engineName = Engines.getEngineName(settings);
+
+    const pitrStatus = BackupService.getPITRStatus(engineName);
+    const support = await BackupService.getIncrementalSupport();
     const stats = BackupService.getBackupStats();
-    
+
     return res.json({
       success: true,
       data: {
         ...pitrStatus,
-        replicaSet: replicaSetStatus,
+        engine: engineName,
+        incrementalSupport: support,
+        // Backward-compatible shape for existing UI
+        replicaSet: {
+          isReplicaSet: support.supported,
+          setName: support.setName,
+          message: support.message,
+          error: support.error
+        },
         stats
       }
     });
@@ -65,7 +78,10 @@ router.get('/pitr-status', async (req, res) => {
 router.get('/chain/:timestamp', async (req, res) => {
   try {
     const { timestamp } = req.params;
-    const chain = BackupService.getBackupChain(timestamp);
+    const SettingsService = require('../services/SettingsService');
+    const Engines = require('../services/engines');
+    const settings = await SettingsService.getAll();
+    const chain = BackupService.getBackupChain(timestamp, Engines.getEngineName(settings));
     
     return res.json({
       success: true,

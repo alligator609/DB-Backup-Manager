@@ -25,6 +25,7 @@
         "jsonwebtoken": "^9.0.2",
         "mongodb": "^6.3.0",
         "multer": "^2.0.2",
+        "mysql2": "^3.24.6",
         "node-cron": "^3.0.3",
         "tar": "^6.2.0"
     },
