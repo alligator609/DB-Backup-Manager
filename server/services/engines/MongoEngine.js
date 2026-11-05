@@ -1,4 +1,7 @@
 const { spawn } = require('child_process');
+const fs = require('fs').promises;
+const path = require('path');
+const tar = require('tar');
 const { MongoClient } = require('mongodb');
 const LogService = require('../LogService');
 const { sanitizeArgs, parseDbList } = require('./sanitize');
@@ -16,6 +19,14 @@ class MongoEngine {
     this.fullFileExtension = '.gz';
     this.incrementalFileExtension = '.oplog.gz';
     this.changeLogName = 'oplog';
+  }
+
+  /**
+   * File extension for full backups. Multi-database selections are packed
+   * as a tar.gz of per-database archives (old mongodump has no nsInclude).
+   */
+  getFullFileExtension(settings) {
+    return parseDbList(settings.mongoDatabases).length > 1 ? '.tar.gz' : this.fullFileExtension;
   }
 
   isConfigured(settings) {
@@ -96,20 +107,44 @@ class MongoEngine {
   /**
    * Run a full backup via mongodump
    */
-  fullBackup(settings, outputPath) {
+  async fullBackup(settings, outputPath) {
     this.assertConfigured(settings);
+    const dbs = parseDbList(settings.mongoDatabases);
+
+    // Multiple databases: mongodump --db accepts only one, so dump each
+    // database to its own archive and pack them into a tar.gz.
+    if (dbs.length > 1) {
+      const tmpDir = `${outputPath}.dbs`;
+      await fs.mkdir(tmpDir, { recursive: true });
+      try {
+        for (const db of dbs) {
+          await this.runDump(settings.mongoUrl, path.join(tmpDir, `${db}.archive`), db);
+        }
+        await tar.create(
+          { gzip: true, file: outputPath, cwd: tmpDir },
+          dbs.map(db => `${db}.archive`)
+        );
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+      }
+      return {};
+    }
+
+    await this.runDump(settings.mongoUrl, outputPath, dbs[0] || null);
+    return {};
+  }
+
+  /**
+   * Run mongodump for a single dump; db=null dumps the whole instance.
+   */
+  runDump(mongoUrl, outputPath, db) {
     return new Promise((resolve, reject) => {
       const args = [
-        `--uri=${settings.mongoUrl}`,
+        `--uri=${mongoUrl}`,
         `--archive=${outputPath}`,
         '--gzip'
       ];
-
-      // Optional comma-separated database list -> namespace include filters.
-      // Empty = dump all databases (mongodump default).
-      for (const db of parseDbList(settings.mongoDatabases)) {
-        args.push(`--nsInclude=${db}.*`);
-      }
+      if (db) args.push(`--db=${db}`);
 
       console.log('[Command] mongodump', sanitizeArgs(args).join(' '));
 
@@ -189,10 +224,32 @@ class MongoEngine {
    */
   async restoreFull(settings, filePath) {
     this.assertConfigured(settings);
+
+    // Multi-database backup: tar.gz of per-database archives
+    if (filePath.endsWith('.tar.gz')) {
+      const tmpDir = `${filePath}.restored`;
+      await fs.mkdir(tmpDir, { recursive: true });
+      try {
+        await tar.extract({ file: filePath, cwd: tmpDir });
+        const archives = (await fs.readdir(tmpDir)).filter(f => f.endsWith('.archive'));
+        for (const f of archives) {
+          await LogService.log('info', `Restoring database archive: ${f}`);
+          await this.runRestore(settings.mongoUrl, path.join(tmpDir, f));
+        }
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+      }
+      return;
+    }
+
     await LogService.log('info', 'Running mongorestore...');
+    await this.runRestore(settings.mongoUrl, filePath);
+  }
+
+  runRestore(mongoUrl, filePath) {
     return new Promise((resolve, reject) => {
       const args = [
-        `--uri=${settings.mongoUrl}`,
+        `--uri=${mongoUrl}`,
         `--archive=${filePath}`,
         '--gzip',
         '--drop' // Overwrites existing data
@@ -537,6 +594,8 @@ class MongoEngine {
    */
   inspect(settings, filePath) {
     this.assertConfigured(settings);
+    // Multi-database backup: tar.gz of per-database archives -> merge structures
+    if (filePath.endsWith('.tar.gz')) return this.inspectTar(settings, filePath);
     const args = [
       `--uri=${settings.mongoUrl}`,
       `--archive=${filePath}`,
@@ -624,6 +683,31 @@ class MongoEngine {
 
       proc.on('error', reject);
     });
+  }
+
+  /**
+   * Inspect a tar.gz bundle of per-database mongodump archives
+   * and merge each archive's namespace structure.
+   */
+  async inspectTar(settings, filePath) {
+    const tmpDir = `${filePath}.inspect`;
+    await fs.mkdir(tmpDir, { recursive: true });
+    try {
+      await tar.extract({ file: filePath, cwd: tmpDir });
+      const archives = (await fs.readdir(tmpDir)).filter(f => f.endsWith('.archive'));
+      const structure = {};
+      let rawOutput = '';
+      for (const f of archives) {
+        const part = await this.inspect(settings, path.join(tmpDir, f));
+        for (const [db, cols] of Object.entries(part.structure || {})) {
+          structure[db] = [...new Set([...(structure[db] || []), ...cols])];
+        }
+        rawOutput += `--- ${f} ---\n${part.rawOutput || ''}\n`;
+      }
+      return { structure, rawOutput: rawOutput.trim() };
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
   }
 }
 

@@ -29,6 +29,10 @@ class MysqlEngine {
     this._toolCache = {};
   }
 
+  getFullFileExtension() {
+    return this.fullFileExtension;
+  }
+
   /**
    * Resolve the first available binary from a list of candidate names.
    * Prefers MariaDB tools (what Alpine ships) then falls back to Oracle names.

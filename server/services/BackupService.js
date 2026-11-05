@@ -122,7 +122,8 @@ class BackupService {
     const settings = await SettingsService.getAll();
     const engine = Engines.getEngineByName(engineName) || Engines.getEngine(settings);
     const dbTag = engine.getTargetName(settings).replace(/[^a-zA-Z0-9_-]+/g, '_').substring(0, 60);
-    const filename = `full_${dbTag}_${new Date(timestamp).toISOString().replace(/:/g, '-').split('.')[0]}${engine.fullFileExtension}`;
+    const ext = engine.getFullFileExtension ? engine.getFullFileExtension(settings) : engine.fullFileExtension;
+    const filename = `full_${dbTag}_${new Date(timestamp).toISOString().replace(/:/g, '-').split('.')[0]}${ext}`;
     const localPath = path.join(this.backupDir, filename);
 
     try {
