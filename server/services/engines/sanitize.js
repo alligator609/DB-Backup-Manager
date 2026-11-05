@@ -16,3 +16,16 @@ function sanitizeArgs(args) {
 }
 
 module.exports = { sanitizeArgs };
+
+/**
+ * Parse a comma-separated database list into a trimmed, non-empty array.
+ * Empty/blank input -> [] meaning "all databases".
+ */
+function parseDbList(str) {
+  return String(str || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+module.exports = { sanitizeArgs, parseDbList };

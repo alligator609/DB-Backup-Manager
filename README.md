@@ -321,6 +321,43 @@ docker-compose logs -f app
 docker-compose down
 ```
 
+### Clean Build
+
+Use this when dependencies change, the image behaves unexpectedly, or cached layers hide problems:
+
+```bash
+# Stop the container and rebuild everything from scratch (no layer cache)
+docker compose build --no-cache
+docker compose up -d
+
+# One-liner
+docker compose up -d --build --force-recreate
+```
+
+> 💡 Your settings and backups survive a clean build — they live in the named volumes (`mongodb-backup-data`, `mongodb-backup-logs`).
+
+To also wipe settings and backup history (full reset — **deletes all stored data**):
+
+```bash
+docker compose down -v        # removes the named volumes
+docker compose build --no-cache
+docker compose up -d
+```
+
+For a local (non-Docker) clean build:
+
+```bash
+# Reinstall all dependencies from scratch
+rm -rf node_modules client/node_modules server/node_modules
+npm run install:all
+
+# Rebuild the frontend
+npm run build
+
+# Start
+npm start
+```
+
 ### Nginx Reverse Proxy (Optional)
 
 ```nginx

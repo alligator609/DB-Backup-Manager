@@ -5,6 +5,7 @@ const zlib = require('zlib');
 const readline = require('readline');
 const mysql = require('mysql2/promise');
 const LogService = require('../LogService');
+const { parseDbList } = require('./sanitize');
 
 // How many bytes of tool banner/header output an "empty" binlog slice can have.
 const EMPTY_BINLOG_THRESHOLD = 1024;
@@ -59,7 +60,8 @@ class MysqlEngine {
    * Name of the database being backed up (empty setting = all databases)
    */
   getTargetName(settings) {
-    return settings.mysqlDatabase || 'all databases';
+    const dbs = String(settings.mysqlDatabase || '').trim();
+    return dbs || 'all databases';
   }
 
   assertConfigured(settings) {
@@ -285,8 +287,11 @@ class MysqlEngine {
       '--triggers',
       '--events'
     ];
-    if (settings.mysqlDatabase) {
-      baseArgs.push('--databases', settings.mysqlDatabase);
+    // Comma-separated database list; empty = all databases.
+    // DB names go last: with --databases, remaining positionals are db names.
+    const dbList = parseDbList(settings.mysqlDatabase);
+    if (dbList.length) {
+      baseArgs.push('--databases', ...dbList);
     } else {
       baseArgs.push('--all-databases');
     }

@@ -21,7 +21,15 @@ RUN npm run build
 FROM node:18-alpine AS binlog-tools
 RUN apk add --no-cache mariadb
 
-# Stage 3: Final image
+# Stage 3: Server dependencies — build tools let native modules (better-sqlite3)
+# compile from source when prebuilt binaries can't be downloaded
+FROM node:18-alpine AS server-deps
+RUN apk add --no-cache python3 make g++
+WORKDIR /app/server
+COPY server/package*.json ./
+RUN npm ci --omit=dev --quiet
+
+# Stage 4: Final image
 FROM node:18-alpine
 
 # Install database backup tools and timezone data
@@ -38,12 +46,9 @@ ENV TZ=Asia/Kolkata
 
 WORKDIR /app
 
-# Copy server package files
-COPY server/package*.json ./server/
-
-# Install production dependencies
+# Copy server dependencies built in the deps stage
 WORKDIR /app/server
-RUN npm ci --production --quiet
+COPY --from=server-deps /app/server/node_modules ./node_modules
 
 # Copy server source
 COPY server/ ./

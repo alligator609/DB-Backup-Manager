@@ -92,6 +92,10 @@ const settingsValidation = [
     .optional()
     .isString()
     .withMessage('MongoDB URL must be a string'),
+  body('mongoDatabases')
+    .optional()
+    .isString()
+    .withMessage('MongoDB database list must be a string'),
   body('mysqlHost')
     .optional()
     .isString()

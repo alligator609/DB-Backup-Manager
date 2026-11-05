@@ -21,6 +21,7 @@ class SettingsService {
         ? process.env.MYSQL_ENABLED === 'true'
         : process.env.DB_ENGINE === 'mysql',
       mongoUrl: process.env.MONGO_URL || '',
+      mongoDatabases: process.env.MONGO_DATABASES || '',
       mysqlHost: process.env.MYSQL_HOST || '',
       mysqlPort: parseInt(process.env.MYSQL_PORT) || 3306,
       mysqlUser: process.env.MYSQL_USER || '',
@@ -110,7 +111,9 @@ class SettingsService {
    */
   applyEnvOverrides(settings) {
       if (process.env.MONGO_URL) settings.mongoUrl = process.env.MONGO_URL;
+      if (process.env.MONGO_DATABASES) settings.mongoDatabases = process.env.MONGO_DATABASES;
       if (process.env.DB_ENGINE) settings.dbEngine = process.env.DB_ENGINE;
+      if (process.env.MONGO_DATABASES) settings.mongoDatabases = process.env.MONGO_DATABASES;
       if (process.env.MYSQL_HOST) settings.mysqlHost = process.env.MYSQL_HOST;
       if (process.env.MYSQL_PORT) settings.mysqlPort = parseInt(process.env.MYSQL_PORT);
       if (process.env.MYSQL_USER) settings.mysqlUser = process.env.MYSQL_USER;
@@ -178,6 +181,7 @@ class SettingsService {
       // Instead, we fix the hostname below if running in Docker.
 
       if (process.env.DB_ENGINE) settings.dbEngine = process.env.DB_ENGINE;
+      if (process.env.MONGO_DATABASES) settings.mongoDatabases = process.env.MONGO_DATABASES;
       if (process.env.MYSQL_HOST) settings.mysqlHost = process.env.MYSQL_HOST;
       if (process.env.MYSQL_PORT) settings.mysqlPort = parseInt(process.env.MYSQL_PORT);
       if (process.env.MYSQL_USER) settings.mysqlUser = process.env.MYSQL_USER;

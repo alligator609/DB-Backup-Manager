@@ -312,6 +312,11 @@ const Settings = () => {
                             <input type="text" value={settings.mongoUrl || ''} onChange={(e) => handleChange('mongoUrl', e.target.value)} className="input" placeholder="mongodb://host.docker.internal:27017/yourdb" />
                             <p className="text-xs text-gray-500 mt-2">🔒 Full MongoDB connection string (encrypted at rest)</p>
                         </div>
+                        <div className="mt-4">
+                            <label className="label">Databases (optional)</label>
+                            <input type="text" value={settings.mongoDatabases || ''} onChange={(e) => handleChange('mongoDatabases', e.target.value)} className="input" placeholder="db1, db2 — leave empty for all databases" />
+                            <p className="text-xs text-gray-500 mt-2">Restricts full backups and incremental restores to the listed databases.</p>
+                        </div>
                         <button type="button" onClick={() => testDbConnection('mongodb')} disabled={testingDb === 'mongodb'} className="btn-primary w-full mt-4">
                             {testingDb === 'mongodb' ? 'Testing...' : '✓ Test MongoDB Connection'}
                         </button>
@@ -514,8 +519,8 @@ mongosh --eval "rs.initiate()"`}
                                 </div>
                             </div>
                             <div>
-                                <label className="label">Database (optional)</label>
-                                <input type="text" value={settings.mysqlDatabase || ''} onChange={(e) => handleChange('mysqlDatabase', e.target.value)} className="input" placeholder="Leave empty to back up all databases" />
+                                <label className="label">Databases (optional)</label>
+                                <input type="text" value={settings.mysqlDatabase || ''} onChange={(e) => handleChange('mysqlDatabase', e.target.value)} className="input" placeholder="db1, db2 — leave empty for all databases" />
                                 <p className="text-xs text-gray-500 mt-2">🔒 Password is encrypted at rest. Docker users: use <code className="bg-gray-100 px-1 rounded">host.docker.internal</code> to reach a MySQL server on the host machine.</p>
                             </div>
                             <button type="button" onClick={() => testDbConnection('mysql')} disabled={testingDb === 'mysql'} className="btn-primary w-full">

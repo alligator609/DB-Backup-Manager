@@ -121,7 +121,8 @@ class BackupService {
     const timestamp = Date.now();
     const settings = await SettingsService.getAll();
     const engine = Engines.getEngineByName(engineName) || Engines.getEngine(settings);
-    const filename = `full_${new Date(timestamp).toISOString().replace(/:/g, '-').split('.')[0]}${engine.fullFileExtension}`;
+    const dbTag = engine.getTargetName(settings).replace(/[^a-zA-Z0-9_-]+/g, '_').substring(0, 60);
+    const filename = `full_${dbTag}_${new Date(timestamp).toISOString().replace(/:/g, '-').split('.')[0]}${engine.fullFileExtension}`;
     const localPath = path.join(this.backupDir, filename);
 
     try {
@@ -247,7 +248,8 @@ class BackupService {
         throw new Error('No full backup found. Please create a full backup first.');
     }
 
-    const filename = `incremental_${lastBackup.timestamp}_${timestamp}${engine.incrementalFileExtension}`;
+    const dbTag = engine.getTargetName(settings).replace(/[^a-zA-Z0-9_-]+/g, '_').substring(0, 60);
+    const filename = `incremental_${dbTag}_${lastBackup.timestamp}_${timestamp}${engine.incrementalFileExtension}`;
     const localPath = path.join(this.backupDir, filename);
     const tempPath = localPath + '.temp'; // For encryption flow
 

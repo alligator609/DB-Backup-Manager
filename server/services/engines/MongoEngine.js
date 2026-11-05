@@ -1,7 +1,7 @@
 const { spawn } = require('child_process');
 const { MongoClient } = require('mongodb');
 const LogService = require('../LogService');
-const { sanitizeArgs } = require('./sanitize');
+const { sanitizeArgs, parseDbList } = require('./sanitize');
 
 /**
  * MongoDB engine implementation.
@@ -26,13 +26,9 @@ class MongoEngine {
    * Name of the database being backed up (from the connection URL path)
    */
   getTargetName(settings) {
-    try {
-      const pathname = new URL(settings.mongoUrl).pathname;
-      return decodeURIComponent(pathname.replace(/^\//, '').split('/')[0]) || 'all databases';
-    } catch {
-      const m = String(settings.mongoUrl).match(/\/([^/?]+)(\?|$)/);
-      return m ? m[1] : 'unknown';
-    }
+    const dbs = String(settings.mongoDatabases || '').trim();
+    if (dbs) return dbs;
+    return 'all databases';
   }
 
   assertConfigured(settings) {
@@ -108,6 +104,12 @@ class MongoEngine {
         `--archive=${outputPath}`,
         '--gzip'
       ];
+
+      // Optional comma-separated database list -> namespace include filters.
+      // Empty = dump all databases (mongodump default).
+      for (const db of parseDbList(settings.mongoDatabases)) {
+        args.push(`--nsInclude=${db}.*`);
+      }
 
       console.log('[Command] mongodump', sanitizeArgs(args).join(' '));
 
@@ -223,6 +225,8 @@ class MongoEngine {
     await LogService.log('info', 'Applying incremental oplog slice...');
 
     const tempDbName = `_oplog_restore_temp_${Date.now()}`;
+    // If a database subset was backed up, skip oplog entries outside it
+    const allowedDbs = new Set(parseDbList(settings.mongoDatabases));
     let client = null;
 
     try {
@@ -269,7 +273,7 @@ class MongoEngine {
       while (await cursor.hasNext()) {
         const op = await cursor.next();
         try {
-          const applied = await this.applyOplogEntry(client, op);
+          const applied = await this.applyOplogEntry(client, op, allowedDbs);
           if (applied) {
             appliedCount++;
           } else {
@@ -337,7 +341,7 @@ class MongoEngine {
   /**
    * Apply a single oplog entry to the database
    */
-  async applyOplogEntry(client, op) {
+  async applyOplogEntry(client, op, allowedDbs) {
     const { op: opType, ns, o, o2 } = op;
 
     console.log(`[Oplog] Processing: op=${opType}, ns=${ns}, o=${JSON.stringify(o).substring(0, 100)}`);
@@ -357,7 +361,7 @@ class MongoEngine {
       console.log(`[Oplog] Found applyOps with ${o.applyOps.length} nested operations`);
       let appliedCount = 0;
       for (const nestedOp of o.applyOps) {
-        const nestedApplied = await this.applyNestedOp(client, nestedOp);
+        const nestedApplied = await this.applyNestedOp(client, nestedOp, allowedDbs);
         if (nestedApplied) appliedCount++;
       }
       console.log(`[Oplog] Applied ${appliedCount}/${o.applyOps.length} nested operations`);
@@ -378,6 +382,7 @@ class MongoEngine {
     if (opType === 'c') {
       console.log(`[Oplog] Command operation: ${JSON.stringify(o)}`);
       const dbName = ns.split('.')[0];
+      if (allowedDbs.size && !allowedDbs.has(dbName)) return false;
 
       try {
         if (o.create) {
@@ -408,6 +413,11 @@ class MongoEngine {
 
     if (!dbName || !collName || collName === '$cmd') {
       console.log(`[Oplog] Skipping invalid namespace: ${ns}`);
+      return false;
+    }
+
+    if (allowedDbs.size && !allowedDbs.has(dbName)) {
+      console.log(`[Oplog] Skipping ${ns}: database not in backup selection`);
       return false;
     }
 
@@ -464,7 +474,7 @@ class MongoEngine {
   /**
    * Apply a nested operation from inside an applyOps command
    */
-  async applyNestedOp(client, nestedOp) {
+  async applyNestedOp(client, nestedOp, allowedDbs) {
     const { op: opType, ns, o, o2 } = nestedOp;
 
     if (!ns || ns.startsWith('admin.') || ns.startsWith('config.') || ns.startsWith('local.')) {
@@ -475,6 +485,10 @@ class MongoEngine {
     const collName = collParts.join('.');
 
     if (!dbName || !collName) {
+      return false;
+    }
+
+    if (allowedDbs.size && !allowedDbs.has(dbName)) {
       return false;
     }
 
