@@ -1,4 +1,4 @@
-# MongoDB Backup Manager
+# MongoDB & MySQL Backup Manager
 
 A production-ready, web-based database backup solution for **MongoDB and MySQL** with scheduling, FTP upload, incremental backups, and point-in-time recovery capabilities.
 
