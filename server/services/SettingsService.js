@@ -13,7 +13,20 @@ class SettingsService {
     this.useSqlite = true;
     
     this.defaultSettings = {
+      dbEngine: process.env.DB_ENGINE || 'mongodb',
+      mongoEnabled: process.env.MONGO_ENABLED !== undefined
+        ? process.env.MONGO_ENABLED === 'true'
+        : (process.env.DB_ENGINE || 'mongodb') === 'mongodb',
+      mysqlEnabled: process.env.MYSQL_ENABLED !== undefined
+        ? process.env.MYSQL_ENABLED === 'true'
+        : process.env.DB_ENGINE === 'mysql',
       mongoUrl: process.env.MONGO_URL || '',
+      mongoDatabases: process.env.MONGO_DATABASES || '',
+      mysqlHost: process.env.MYSQL_HOST || '',
+      mysqlPort: parseInt(process.env.MYSQL_PORT) || 3306,
+      mysqlUser: process.env.MYSQL_USER || '',
+      mysqlPassword: process.env.MYSQL_PASSWORD || '',
+      mysqlDatabase: process.env.MYSQL_DATABASE || '',
       ftpHost: process.env.FTP_HOST || '',
       ftpPort: parseInt(process.env.FTP_PORT) || 21,
       ftpUser: process.env.FTP_USER || '',
@@ -98,6 +111,14 @@ class SettingsService {
    */
   applyEnvOverrides(settings) {
       if (process.env.MONGO_URL) settings.mongoUrl = process.env.MONGO_URL;
+      if (process.env.MONGO_DATABASES) settings.mongoDatabases = process.env.MONGO_DATABASES;
+      if (process.env.DB_ENGINE) settings.dbEngine = process.env.DB_ENGINE;
+      if (process.env.MONGO_DATABASES) settings.mongoDatabases = process.env.MONGO_DATABASES;
+      if (process.env.MYSQL_HOST) settings.mysqlHost = process.env.MYSQL_HOST;
+      if (process.env.MYSQL_PORT) settings.mysqlPort = parseInt(process.env.MYSQL_PORT);
+      if (process.env.MYSQL_USER) settings.mysqlUser = process.env.MYSQL_USER;
+      if (process.env.MYSQL_PASSWORD) settings.mysqlPassword = process.env.MYSQL_PASSWORD;
+      if (process.env.MYSQL_DATABASE) settings.mysqlDatabase = process.env.MYSQL_DATABASE;
       if (process.env.FTP_HOST) settings.ftpHost = process.env.FTP_HOST;
       if (process.env.FTP_PORT) settings.ftpPort = parseInt(process.env.FTP_PORT);
       if (process.env.FTP_USER) settings.ftpUser = process.env.FTP_USER;
@@ -125,24 +146,30 @@ class SettingsService {
         }
         
         // Decrypt sensitive fields
-        if (settings.ftpPassword) {
-            settings.ftpPassword = this.decrypt(settings.ftpPassword);
-        }
-        if (settings.mongoUrl) {
-            settings.mongoUrl = this.decrypt(settings.mongoUrl);
+        for (const key of ['ftpPassword', 'mongoUrl', 'mysqlPassword']) {
+            if (settings[key]) {
+                try {
+                    settings[key] = this.decrypt(settings[key]);
+                } catch {
+                    // Value is not encrypted (e.g. plaintext from env or old config)
+                }
+            }
         }
       } else {
         // JSON fallback
         try {
           const data = await fs.readFile(this.jsonPath, 'utf8');
           settings = JSON.parse(data);
-          
+
           // Decrypt sensitive fields
-          if (settings.ftpPassword) {
-            settings.ftpPassword = this.decrypt(settings.ftpPassword);
-          }
-          if (settings.mongoUrl) {
-            settings.mongoUrl = this.decrypt(settings.mongoUrl);
+          for (const key of ['ftpPassword', 'mongoUrl', 'mysqlPassword']) {
+            if (settings[key]) {
+                try {
+                    settings[key] = this.decrypt(settings[key]);
+                } catch {
+                    // Value is not encrypted
+                }
+            }
           }
         } catch (error) {
            // Ignore file not found
@@ -152,7 +179,14 @@ class SettingsService {
       // Apply Environment Overrides (Both Paths)
       // NOTE: We do NOT override mongoUrl here blindly, because that strips credentials saved in the UI.
       // Instead, we fix the hostname below if running in Docker.
-      
+
+      if (process.env.DB_ENGINE) settings.dbEngine = process.env.DB_ENGINE;
+      if (process.env.MONGO_DATABASES) settings.mongoDatabases = process.env.MONGO_DATABASES;
+      if (process.env.MYSQL_HOST) settings.mysqlHost = process.env.MYSQL_HOST;
+      if (process.env.MYSQL_PORT) settings.mysqlPort = parseInt(process.env.MYSQL_PORT);
+      if (process.env.MYSQL_USER) settings.mysqlUser = process.env.MYSQL_USER;
+      if (process.env.MYSQL_PASSWORD) settings.mysqlPassword = process.env.MYSQL_PASSWORD;
+      if (process.env.MYSQL_DATABASE) settings.mysqlDatabase = process.env.MYSQL_DATABASE;
       if (process.env.FTP_HOST) settings.ftpHost = process.env.FTP_HOST;
       if (process.env.FTP_PORT) settings.ftpPort = parseInt(process.env.FTP_PORT);
       if (process.env.FTP_USER) settings.ftpUser = process.env.FTP_USER;
@@ -174,6 +208,7 @@ class SettingsService {
     return {
       ...settings,
       mongoUrl: settings.mongoUrl ? '***' : '',
+      mysqlPassword: settings.mysqlPassword ? '***' : '',
       ftpPassword: settings.ftpPassword ? '***' : ''
     };
   }
@@ -188,33 +223,20 @@ class SettingsService {
       const toSave = { ...settings };
       
       // Only encrypt if the value has changed and is not masked
-      if (toSave.ftpPassword) {
-        if (toSave.ftpPassword === '***') {
-          // Preserve existing encrypted value
-          const existing = await this.getRawEncrypted('ftpPassword');
-          toSave.ftpPassword = existing || this.encrypt('');
-        } else if (toSave.ftpPassword !== currentSettings.ftpPassword) {
-          // New value, encrypt it
-          toSave.ftpPassword = this.encrypt(toSave.ftpPassword);
-        } else {
-          // Same value, get encrypted version
-          const existing = await this.getRawEncrypted('ftpPassword');
-          toSave.ftpPassword = existing || this.encrypt(toSave.ftpPassword);
-        }
-      }
-      
-      if (toSave.mongoUrl) {
-        if (toSave.mongoUrl === '***') {
-          // Preserve existing encrypted value
-          const existing = await this.getRawEncrypted('mongoUrl');
-          toSave.mongoUrl = existing || this.encrypt('');
-        } else if (toSave.mongoUrl !== currentSettings.mongoUrl) {
-          // New value, encrypt it
-          toSave.mongoUrl = this.encrypt(toSave.mongoUrl);
-        } else {
-          // Same value, get encrypted version
-          const existing = await this.getRawEncrypted('mongoUrl');
-          toSave.mongoUrl = existing || this.encrypt(toSave.mongoUrl);
+      for (const key of ['ftpPassword', 'mongoUrl', 'mysqlPassword']) {
+        if (toSave[key]) {
+          if (toSave[key] === '***') {
+            // Preserve existing encrypted value
+            const existing = await this.getRawEncrypted(key);
+            toSave[key] = existing || this.encrypt('');
+          } else if (toSave[key] !== currentSettings[key]) {
+            // New value, encrypt it
+            toSave[key] = this.encrypt(toSave[key]);
+          } else {
+            // Same value, get encrypted version
+            const existing = await this.getRawEncrypted(key);
+            toSave[key] = existing || this.encrypt(toSave[key]);
+          }
         }
       }
       

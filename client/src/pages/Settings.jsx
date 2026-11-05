@@ -16,6 +16,8 @@ const Settings = () => {
     const [toast, setToast] = useState(null);
     const [ftpTestResult, setFtpTestResult] = useState(null);
     const [s3TestResult, setS3TestResult] = useState(null);
+    const [testingDb, setTestingDb] = useState(false);
+    const [dbTestResult, setDbTestResult] = useState(null);
     const [showPassword, setShowPassword] = useState(false);
     const [showS3Secret, setShowS3Secret] = useState(false);
 
@@ -129,6 +131,22 @@ const Settings = () => {
         }
     };
 
+    const testDbConnection = async (engine) => {
+        setTestingDb(engine);
+        setDbTestResult(null);
+
+        try {
+            const response = await api.post('/settings/test-db', { ...settings, engine });
+            setDbTestResult(response.data);
+            setToast({ message: response.data.success ? 'Database connection successful!' : 'Database connection failed', type: response.data.success ? 'success' : 'error' });
+        } catch (error) {
+            setDbTestResult({ success: false, message: 'Connection test failed' });
+            setToast({ message: 'Database connection test failed', type: 'error' });
+        } finally {
+            setTestingDb(false);
+        }
+    };
+
     const handleReset = async () => {
         if (!window.confirm('Reset all settings to defaults?')) return;
         setLoading(true);
@@ -195,6 +213,15 @@ const Settings = () => {
         );
     }
 
+    // Engine enable flags — fall back to the old exclusive dbEngine selector
+    // for settings saved before multi-engine support
+    const mongoEngineOn = settings.mongoEnabled !== undefined
+        ? settings.mongoEnabled
+        : settings.dbEngine !== 'mysql';
+    const mysqlEngineOn = settings.mysqlEnabled !== undefined
+        ? settings.mysqlEnabled
+        : settings.dbEngine === 'mysql';
+
     return (
         <div className="min-h-screen">
             <Navbar />
@@ -236,7 +263,42 @@ const Settings = () => {
                         </div>
                     </Card>
 
+                    {/* Database Engines — enable one or both */}
+                    <Card title="Database Engines">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {[
+                                { key: 'mongoEnabled', label: '🍃 MongoDB', desc: 'mongodump + oplog incrementals' },
+                                { key: 'mysqlEnabled', label: '🐬 MySQL', desc: 'mysqldump + binlog incrementals' }
+                            ].map((eng) => {
+                                const enabled = settings[eng.key] !== undefined
+                                    ? settings[eng.key]
+                                    : (eng.key === 'mongoEnabled' ? settings.dbEngine !== 'mysql' : settings.dbEngine === 'mysql');
+                                return (
+                                    <button
+                                        key={eng.key}
+                                        type="button"
+                                        onClick={() => handleChange(eng.key, !enabled)}
+                                        className={`p-4 rounded-xl border-2 text-left transition-all ${enabled
+                                                ? 'border-primary-500 bg-primary-50'
+                                                : 'border-gray-200 bg-white hover:border-gray-300'
+                                            }`}
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <span className="font-semibold text-gray-900">{eng.label}</span>
+                                            <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${enabled ? 'bg-primary-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                                                {enabled ? 'ON' : 'OFF'}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-gray-500 mt-1">{eng.desc}</p>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-3">💡 Enable both to back up MongoDB and MySQL with the same app — backups and restore chains are tracked per engine.</p>
+                    </Card>
+
                     {/* MongoDB Configuration */}
+                    {mongoEngineOn && (<>
                     <Card title="MongoDB Configuration">
                         <div>
                             <label className="label flex items-center gap-2">
@@ -247,9 +309,18 @@ const Settings = () => {
                                 </svg>
                                 MongoDB Connection URL
                             </label>
-                            <input type="text" value={settings.mongoUrl || ''} onChange={(e) => handleChange('mongoUrl', e.target.value)} className="input" placeholder="mongodb://localhost:27017/yourdb" />
+                            <input type="text" value={settings.mongoUrl || ''} onChange={(e) => handleChange('mongoUrl', e.target.value)} className="input" placeholder="mongodb://host.docker.internal:27017/yourdb" />
                             <p className="text-xs text-gray-500 mt-2">🔒 Full MongoDB connection string (encrypted at rest)</p>
                         </div>
+                        <div className="mt-4">
+                            <label className="label">Databases (optional)</label>
+                            <input type="text" value={settings.mongoDatabases || ''} onChange={(e) => handleChange('mongoDatabases', e.target.value)} className="input" placeholder="db1, db2 — leave empty for all databases" />
+                            <p className="text-xs text-gray-500 mt-2">Restricts full backups and incremental restores to the listed databases.</p>
+                        </div>
+                        <button type="button" onClick={() => testDbConnection('mongodb')} disabled={testingDb === 'mongodb'} className="btn-primary w-full mt-4">
+                            {testingDb === 'mongodb' ? 'Testing...' : '✓ Test MongoDB Connection'}
+                        </button>
+                        {dbTestResult && <div className="mt-3"><ConnectionStatus testResult={dbTestResult} /></div>}
                     </Card>
 
                     {/* Replica Set Requirement Info */}
@@ -421,6 +492,91 @@ mongosh --eval "rs.initiate()"`}
                             </div>
                         )}
                     </div>
+                    </>)}
+
+                    {/* MySQL Configuration */}
+                    {mysqlEngineOn && (<>
+                    <Card title="MySQL Configuration">
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div className="sm:col-span-2">
+                                    <label className="label">Host</label>
+                                    <input type="text" value={settings.mysqlHost || ''} onChange={(e) => handleChange('mysqlHost', e.target.value)} className="input" placeholder="host.docker.internal" />
+                                </div>
+                                <div>
+                                    <label className="label">Port</label>
+                                    <input type="number" value={settings.mysqlPort || 3306} onChange={(e) => handleChange('mysqlPort', parseInt(e.target.value) || 3306)} className="input" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="label">Username</label>
+                                    <input type="text" value={settings.mysqlUser || ''} onChange={(e) => handleChange('mysqlUser', e.target.value)} className="input" placeholder="backup_user" />
+                                </div>
+                                <div>
+                                    <label className="label">Password</label>
+                                    <input type={showPassword ? "text" : "password"} value={settings.mysqlPassword || ''} onChange={(e) => handleChange('mysqlPassword', e.target.value)} className="input" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="label">Databases (optional)</label>
+                                <input type="text" value={settings.mysqlDatabase || ''} onChange={(e) => handleChange('mysqlDatabase', e.target.value)} className="input" placeholder="db1, db2 — leave empty for all databases" />
+                                <p className="text-xs text-gray-500 mt-2">🔒 Password is encrypted at rest. Docker users: use <code className="bg-gray-100 px-1 rounded">host.docker.internal</code> to reach a MySQL server on the host machine.</p>
+                            </div>
+                            <button type="button" onClick={() => testDbConnection('mysql')} disabled={testingDb === 'mysql'} className="btn-primary w-full">
+                                {testingDb === 'mysql' ? 'Testing...' : '✓ Test MySQL Connection'}
+                            </button>
+                            {dbTestResult && <ConnectionStatus testResult={dbTestResult} />}
+                        </div>
+                    </Card>
+
+                    {/* Binlog Requirement Info */}
+                    <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl border-2 border-amber-200 p-5 shadow-sm">
+                        <div className="flex items-start gap-4">
+                            <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center shadow-lg">
+                                <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                            </div>
+                            <div className="flex-1">
+                                <h4 className="text-lg font-bold text-gray-900 mb-2">
+                                    ⚠️ Important: Binary Logging Required for Incremental Backups
+                                </h4>
+                                <p className="text-gray-700 text-sm mb-3">
+                                    To use <strong>Incremental Backups</strong> and <strong>Point-in-Time Recovery (PITR)</strong>,
+                                    your MySQL server must have the <strong>binary log (binlog)</strong> enabled — the MySQL
+                                    equivalent of MongoDB's oplog.
+                                </p>
+                                <div className="flex flex-wrap gap-2 mb-4">
+                                    <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
+                                        ✓ Full Backups work without binlog
+                                    </span>
+                                    <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full">
+                                        ⚠ Incremental needs binlog
+                                    </span>
+                                    <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full">
+                                        ⚠ PITR needs binlog
+                                    </span>
+                                </div>
+                                <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto mb-3">
+                                    <code className="text-green-400 text-xs whitespace-pre font-mono">
+                                        {`# my.cnf / my.ini  (then restart MySQL)
+[mysqld]
+server_id = 1
+log_bin = mysql-bin
+binlog_format = ROW
+
+# Verify with:
+mysql -e "SHOW VARIABLES LIKE 'log_bin';"`}
+                                    </code>
+                                </div>
+                                <p className="text-xs text-gray-600">
+                                    🔑 The backup user needs <code className="bg-gray-100 px-1 rounded">SELECT</code>, <code className="bg-gray-100 px-1 rounded">RELOAD</code>, <code className="bg-gray-100 px-1 rounded">LOCK TABLES</code> and <code className="bg-gray-100 px-1 rounded">REPLICATION CLIENT</code> privileges. If the user authenticates with <code className="bg-gray-100 px-1 rounded">caching_sha2_password</code> (MySQL 8 default), MariaDB client tools may not connect — prefer <code className="bg-gray-100 px-1 rounded">mysql_native_password</code>.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    </>)}
 
                     {/* Storage Configuration */}
                     <Card title="Storage Configuration">

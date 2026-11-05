@@ -31,17 +31,17 @@ router.get('/status', async (req, res) => {
  */
 router.post('/point-in-time', async (req, res) => {
     try {
-        const { timestamp } = req.body;
-        
+        const { timestamp, engine } = req.body;
+
         if (!timestamp) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Target timestamp is required' 
+            return res.status(400).json({
+                success: false,
+                message: 'Target timestamp is required'
             });
         }
-        
+
         // Run restore asynchronously
-        const restorePromise = RestoreService.restoreToPointInTime(timestamp);
+        const restorePromise = RestoreService.restoreToPointInTime(timestamp, engine);
         
         // Don't wait for completion, return immediately
         restorePromise.catch(error => {
@@ -66,7 +66,7 @@ router.post('/point-in-time', async (req, res) => {
 router.get('/preview/:timestamp', async (req, res) => {
     try {
         const { timestamp } = req.params;
-        const chain = RestoreService.previewRestore(timestamp);
+        const chain = await RestoreService.previewRestore(timestamp, req.query.engine);
         res.json({ success: true, data: chain });
     } catch (error) {
         console.error('Preview restore failed:', error);
@@ -116,7 +116,8 @@ router.post('/upload', upload.single('backup'), async (req, res) => {
             filename: req.file.originalname,
             local_path: req.file.path,
             type: type,
-            encrypted: isEncrypted ? 1 : 0
+            encrypted: isEncrypted ? 1 : 0,
+            engine: req.body.engine || null // falls back to the configured engine
         };
 
         await RestoreService.restoreSingleBackup(mockBackup);

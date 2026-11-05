@@ -17,23 +17,38 @@ COPY client/ ./
 # Build frontend
 RUN npm run build
 
-# Stage 2: Final image
+# Stage 2: Extract mysqlbinlog (only shipped in the full mariadb package on Alpine)
+FROM node:18-alpine AS binlog-tools
+RUN apk add --no-cache mariadb
+
+# Stage 3: Server dependencies — build tools let native modules (better-sqlite3)
+# compile from source when prebuilt binaries can't be downloaded
+FROM node:18-alpine AS server-deps
+RUN apk add --no-cache python3 make g++
+WORKDIR /app/server
+COPY server/package*.json ./
+RUN npm ci --omit=dev --quiet
+
+# Stage 4: Final image
 FROM node:18-alpine
 
-# Install mongodump (MongoDB tools) and timezone data
-RUN apk add --no-cache mongodb-tools tzdata
+# Install database backup tools and timezone data
+# mongodb-tools: mongodump/mongorestore
+# mariadb-client: mysqldump/mariadb-dump, mysql/mariadb
+RUN apk add --no-cache mongodb-tools mariadb-client tzdata
+
+# mysqlbinlog for MySQL incremental backups (copied to keep the image small)
+COPY --from=binlog-tools /usr/bin/mariadb-binlog /usr/bin/mariadb-binlog
+RUN ln -s /usr/bin/mariadb-binlog /usr/bin/mysqlbinlog
 
 # Set default timezone (can be overridden by TZ environment variable)
 ENV TZ=Asia/Kolkata
 
 WORKDIR /app
 
-# Copy server package files
-COPY server/package*.json ./server/
-
-# Install production dependencies
+# Copy server dependencies built in the deps stage
 WORKDIR /app/server
-RUN npm ci --production --quiet
+COPY --from=server-deps /app/server/node_modules ./node_modules
 
 # Copy server source
 COPY server/ ./

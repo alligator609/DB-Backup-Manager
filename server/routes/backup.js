@@ -37,15 +37,43 @@ router.get('/status', async (req, res) => {
  */
 router.get('/pitr-status', async (req, res) => {
   try {
-    const pitrStatus = BackupService.getPITRStatus();
-    const replicaSetStatus = await BackupService.checkReplicaSetStatus();
+    const SettingsService = require('../services/SettingsService');
+    const Engines = require('../services/engines');
+    const settings = await SettingsService.getAll();
+    const enabledNames = Engines.getEnabledEngineNames(settings);
     const stats = BackupService.getBackupStats();
-    
+
+    // Build PITR status per enabled engine
+    const engineStatus = {};
+    for (const name of enabledNames) {
+      const engine = Engines.getEngineByName(name);
+      const pitrStatus = BackupService.getPITRStatus(name);
+      const support = engine.isConfigured(settings)
+        ? await engine.checkIncrementalSupport(settings)
+        : { supported: false, message: `${engine.label} is enabled but not configured` };
+      engineStatus[name] = {
+        ...pitrStatus,
+        configured: engine.isConfigured(settings),
+        incrementalSupport: { ...support, engine: name },
+        replicaSet: {
+          isReplicaSet: support.supported,
+          setName: support.setName,
+          message: support.message,
+          error: support.error
+        }
+      };
+    }
+
+    // Flat fields for the primary engine keep older clients working
+    const primary = enabledNames[0] || 'mongodb';
+    const primaryStatus = engineStatus[primary] || {};
+
     return res.json({
       success: true,
       data: {
-        ...pitrStatus,
-        replicaSet: replicaSetStatus,
+        ...primaryStatus,
+        engine: primary,
+        engines: engineStatus,
         stats
       }
     });
@@ -65,7 +93,7 @@ router.get('/pitr-status', async (req, res) => {
 router.get('/chain/:timestamp', async (req, res) => {
   try {
     const { timestamp } = req.params;
-    const chain = BackupService.getBackupChain(timestamp);
+    const chain = BackupService.getBackupChain(timestamp, req.query.engine);
     
     return res.json({
       success: true,
@@ -86,22 +114,29 @@ router.get('/chain/:timestamp', async (req, res) => {
  */
 router.post('/run', backupRunValidation, async (req, res) => {
   try {
-    const { type } = req.body;
-    
-    // Run backup asynchronously
-    const backupPromise = type === 'incremental'
-      ? BackupService.createIncrementalBackup()
-      : BackupService.createFullBackup();
-    
+    const { type, engine } = req.body;
+
+    // Run backup asynchronously.
+    // engine='all' (or omitted) backs up every enabled+configured engine.
+    let backupPromise;
+    if (!engine || engine === 'all') {
+      backupPromise = BackupService.runBackupsForAllEnabled(type);
+    } else {
+      backupPromise = type === 'incremental'
+        ? BackupService.createIncrementalBackup(engine)
+        : BackupService.createFullBackup(engine);
+    }
+
     // Don't wait for completion, return immediately
     backupPromise.catch(error => {
       console.error('Backup failed:', error);
     });
-    
+
     return res.json({
       success: true,
       message: `${type} backup started`,
-      type
+      type,
+      engine: engine || 'all'
     });
   } catch (error) {
     console.error('Start backup error:', error);

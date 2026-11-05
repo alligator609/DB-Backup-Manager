@@ -109,7 +109,7 @@ const Dashboard = () => {
         setShowConfirm(false);
 
         try {
-            const response = await api.post('/backup/run', { type });
+            const response = await api.post('/backup/run', { type, engine: 'all' });
 
             if (response.data.success) {
                 setToast({
@@ -845,6 +845,7 @@ const Dashboard = () => {
                                             <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Type</th>
                                             <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Status</th>
                                             <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Backup ID</th>
+                                            <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Database</th>
                                             <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Size</th>
                                             <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Date</th>
                                             <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Storage</th>
@@ -881,6 +882,14 @@ const Dashboard = () => {
                                                     <span className="text-sm font-mono text-gray-700 bg-gray-100 px-2 py-1 rounded">
                                                         {backup.id.length > 30 ? `${backup.id.substring(0, 30)}...` : backup.id}
                                                     </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <div className="flex flex-col">
+                                                        <span className={`inline-flex items-center gap-1 text-xs font-bold ${(backup.engine || 'mongodb') === 'mysql' ? 'text-sky-700' : 'text-green-700'}`}>
+                                                            {(backup.engine || 'mongodb') === 'mysql' ? '🐬 MySQL' : '🍃 MongoDB'}
+                                                        </span>
+                                                        <span className="text-xs text-gray-500">{backup.db_name || '-'}</span>
+                                                    </div>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap">
                                                     <span className="text-sm font-semibold text-gray-900">{formatBytes(backup.size)}</span>

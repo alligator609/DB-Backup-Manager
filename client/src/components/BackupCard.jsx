@@ -32,6 +32,12 @@ const BackupCard = ({ backup, onDownload, onDelete, onRestore, onInspect }) => {
         }
     };
 
+    // Engine badge (backups created before multi-engine support are MongoDB)
+    const engineName = backup.engine || 'mongodb';
+    const engineBadge = engineName === 'mysql'
+        ? { icon: '🐬', label: 'MySQL', classes: 'bg-gradient-to-r from-sky-500 to-blue-600' }
+        : { icon: '🍃', label: 'MongoDB', classes: 'bg-gradient-to-r from-green-500 to-emerald-600' };
+
     return (
         <div className="bg-white rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 border-2 border-gray-100 overflow-hidden group hover:scale-[1.02]">
             <div className="p-5">
@@ -44,8 +50,14 @@ const BackupCard = ({ backup, onDownload, onDelete, onRestore, onInspect }) => {
                             <span className={`px-3 py-1 rounded-full text-xs font-bold text-white ${getStatusColor(backup.status)} shadow-md`}>
                                 {backup.status}
                             </span>
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold text-white ${engineBadge.classes} shadow-md`} title={`Database engine: ${engineBadge.label}`}>
+                                {engineBadge.icon} {engineBadge.label}
+                            </span>
                         </div>
-                        <p className="text-sm text-gray-600 font-mono mt-2">
+                        <p className="text-sm text-gray-800 font-semibold mt-2">
+                            {backup.db_name || 'unknown database'}
+                        </p>
+                        <p className="text-xs text-gray-500 font-mono">
                             ID: {backup.id}
                         </p>
                     </div>

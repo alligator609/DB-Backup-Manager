@@ -57,8 +57,8 @@ class ScheduleService {
       if (!hasFullBackup) {
         await LogService.log('info', 'No full backup found. Creating initial full backup before starting schedule...');
         try {
-          // Run full backup asynchronously
-          BackupService.createFullBackup().catch(err => {
+          // Run full backup asynchronously for all enabled engines
+          BackupService.runBackupsForAllEnabled('full').catch(err => {
             LogService.log('error', `Initial full backup failed: ${err.message}`);
           });
           await LogService.log('info', 'Initial full backup started');
@@ -175,13 +175,10 @@ class ScheduleService {
   async executeScheduledBackup(backupType) {
     try {
       await LogService.log('info', `Executing scheduled ${backupType} backup`);
-      
-      if (backupType === 'incremental') {
-        await BackupService.createIncrementalBackup();
-      } else {
-        await BackupService.createFullBackup();
-      }
-      
+
+      // Runs for every enabled+configured engine
+      await BackupService.runBackupsForAllEnabled(backupType);
+
       await LogService.log('success', `Scheduled ${backupType} backup completed`);
     } catch (error) {
       await LogService.log('error', `Scheduled ${backupType} backup failed: ${error.message}`, {
